@@ -1,0 +1,29 @@
+:root {
+  --romanian-primary: #4b8a08;
+  --romanian-light: #c6e6b0;
+  --romanian-dark: #005000;
+  
+  --latin-primary: #8B0000;
+  --latin-light: #e6d2b0;
+  --latin-dark: #800000;
+}
+
+body {
+  font-family: 'Times New Roman', Times, serif;
+  background-color: #fafafa;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+p {
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: pre-line;
+}
