@@ -30,7 +30,6 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch sayings from CSV
   const fetchSayings = async () => {
     setIsLoading(true);
     setError(null);
@@ -66,12 +65,10 @@ function App() {
       setSayings(parsedSayings);
       
       if (parsedSayings.length > 0) {
-        // Initialize the learning system
-        const learningSystem = getLearningSystem(parsedSayings);
+        getLearningSystem(parsedSayings);
         setCurrentIndex(0);
         setCurrentSaying(parsedSayings[0]);
         
-        // Set initial statistics
         updateStatistics(parsedSayings);
         
         // Start timing for the first card
@@ -243,7 +240,7 @@ function App() {
     const statsData: StatisticsData = {
       totalCards: learningStats.totalCards,
       viewedCards: learningStats.viewedCards,
-      averageTimeSeconds: learningStats.averageTimePerCard / 1000, // Convert ms to seconds
+      averageTimeSeconds: learningStats.averageTimePerCard / 1000,
       mostDifficultCards: [],
       studyStreak: calculateStudyStreak(),
       lastStudied: new Date(learningStats.lastStudySession)
@@ -257,17 +254,15 @@ function App() {
         return {
           latin,
           romanian,
-          avgTimeSeconds: card.avgTime / 1000 // Convert ms to seconds
+          avgTimeSeconds: card.avgTime / 1000
         };
       });
     
     setStats(statsData);
   };
   
-  // Calculate study streak based on localStorage data
   const calculateStudyStreak = (): number => {
-    // This would need a proper implementation tracking daily study activity
-    // For simplicity, we'll return a placeholder value for now
+    // TODO
     return 1;
   };
   
