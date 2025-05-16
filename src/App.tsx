@@ -1,13 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { TouchEvent } from 'react'
 import './App.css'
-
-interface Saying {
-  latin: string;
-  romanian: string;
-}
+import { getLearningSystem } from './utils/learningSystem'
+import StatsDisplay from './components/StatsDisplay'
+import type { Saying, StatisticsData } from './types'
 
 function App() {
+  // Core state
   const [sayings, setSayings] = useState<Saying[]>([]);
   const [currentSaying, setCurrentSaying] = useState<Saying | null>(null);
   const [isFlipped, setIsFlipped] = useState(false);
@@ -17,11 +16,21 @@ function App() {
   const [favorites, setFavorites] = useState<Saying[]>([]);
   const [showingFavorites, setShowingFavorites] = useState(false);
   
+  // Learning system state
+  const [currentIndex, setCurrentIndex] = useState<number>(0);
+  const [showStats, setShowStats] = useState(false);
+  const [stats, setStats] = useState<StatisticsData | null>(null);
+  
+  // Time tracking
+  const cardStartTime = useRef<number>(Date.now());
+  const timeSpent = useRef<number>(0);
+  
   const minSwipeDistance = 50;
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Fetch sayings from CSV
   const fetchSayings = async () => {
     setIsLoading(true);
     setError(null);
@@ -57,8 +66,16 @@ function App() {
       setSayings(parsedSayings);
       
       if (parsedSayings.length > 0) {
+        // Initialize the learning system
+        const learningSystem = getLearningSystem(parsedSayings);
         setCurrentIndex(0);
         setCurrentSaying(parsedSayings[0]);
+        
+        // Set initial statistics
+        updateStatistics(parsedSayings);
+        
+        // Start timing for the first card
+        cardStartTime.current = Date.now();
       } else {
         setError("No sayings found in the data.");
       }
@@ -73,6 +90,7 @@ function App() {
   useEffect(() => {
     fetchSayings();
     
+    // Load favorites from localStorage
     const savedFavorites = localStorage.getItem('latinSayFavorites');
     if (savedFavorites) {
       try {
@@ -82,6 +100,7 @@ function App() {
       }
     }
     
+    // Handle viewport height for mobile
     const handleResize = () => {
       document.documentElement.style.setProperty(
         '--vh', 
@@ -97,6 +116,7 @@ function App() {
     };
   }, []);
   
+  // Handle keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!currentSaying) return;
@@ -113,6 +133,10 @@ function App() {
         case 'F':
           toggleFavorite();
           break;
+        case 's':
+        case 'S':
+          setShowStats(!showStats);
+          break;
         default:
           break;
       }
@@ -123,9 +147,22 @@ function App() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [currentSaying]);
+  }, [currentSaying, showStats]);
 
+  // Record time when card is flipped
   const handleFlip = () => {
+    // Record time spent before flipping
+    if (!isFlipped && currentSaying) {
+      timeSpent.current = Date.now() - cardStartTime.current;
+      
+      // Record in learning system
+      const learningSystem = getLearningSystem(sayings);
+      learningSystem.recordCardView(currentSaying, timeSpent.current);
+      
+      // Update statistics
+      updateStatistics(sayings);
+    }
+    
     setAnimationClass('flipping');
     setTimeout(() => {
       setIsFlipped(!isFlipped);
@@ -133,6 +170,7 @@ function App() {
     }, 250);
   };
   
+  // Toggle favorite status for current card
   const toggleFavorite = () => {
     if (!currentSaying) return;
     
@@ -159,27 +197,78 @@ function App() {
       : false;
   };
 
-  // Keep track of current index to avoid constantly random changes
-  const [currentIndex, setCurrentIndex] = useState<number>(0);
-  
+  // Get next card using the learning system algorithm
   const getNextCard = () => {
-    if (sayings.length > 0) {
-      // Calculate the next index using modulo to cycle through the array
-      const nextIndex = (currentIndex + 1) % sayings.length;
-      setCurrentIndex(nextIndex);
+    if (sayings.length <= 1 || !currentSaying) return;
+    
+    // Record time spent on current card if not flipped
+    if (!isFlipped) {
+      timeSpent.current = Date.now() - cardStartTime.current;
       
-      setAnimationClass('sliding-out');
+      // Record in learning system
+      const learningSystem = getLearningSystem(sayings);
+      learningSystem.recordCardView(currentSaying, timeSpent.current);
+    }
+    
+    // Get next card index from learning system
+    const learningSystem = getLearningSystem(sayings);
+    const nextIndex = learningSystem.getNextCardIndex(sayings, currentIndex);
+    
+    setAnimationClass('sliding-out');
+    
+    setTimeout(() => {
+      setCurrentIndex(nextIndex);
+      setCurrentSaying(sayings[nextIndex]);
+      setIsFlipped(false);
+      setAnimationClass('sliding-in');
+      
+      // Reset timer for new card
+      cardStartTime.current = Date.now();
       
       setTimeout(() => {
-        setCurrentSaying(sayings[nextIndex]);
-        setIsFlipped(false);
-        setAnimationClass('sliding-in');
-        
-        setTimeout(() => {
-          setAnimationClass('');
-        }, 500);
+        setAnimationClass('');
       }, 500);
-    }
+      
+      // Update statistics
+      updateStatistics(sayings);
+    }, 500);
+  };
+  
+  // Update statistics for display
+  const updateStatistics = (sayingsData: Saying[]) => {
+    const learningSystem = getLearningSystem(sayingsData);
+    const learningStats = learningSystem.getStatistics();
+    
+    // Convert to our display format
+    const statsData: StatisticsData = {
+      totalCards: learningStats.totalCards,
+      viewedCards: learningStats.viewedCards,
+      averageTimeSeconds: learningStats.averageTimePerCard / 1000, // Convert ms to seconds
+      mostDifficultCards: [],
+      studyStreak: calculateStudyStreak(),
+      lastStudied: new Date(learningStats.lastStudySession)
+    };
+    
+    // Map difficult cards to our format
+    statsData.mostDifficultCards = learningStats.mostDifficultCards
+      .map(card => {
+        // Extract latin and romanian from the ID (format: "latin_romanian")
+        const [latin, romanian] = card.id.split('_');
+        return {
+          latin,
+          romanian,
+          avgTimeSeconds: card.avgTime / 1000 // Convert ms to seconds
+        };
+      });
+    
+    setStats(statsData);
+  };
+  
+  // Calculate study streak based on localStorage data
+  const calculateStudyStreak = (): number => {
+    // This would need a proper implementation tracking daily study activity
+    // For simplicity, we'll return a placeholder value for now
+    return 1;
   };
   
   // Handle touch events for swipe
@@ -210,6 +299,22 @@ function App() {
   return (
     <div className="app-container">
       <h1>Latin Sayings</h1>
+      
+      {/* Stats button */}
+      <button 
+        className="stats-button"
+        onClick={() => setShowStats(true)}
+        aria-label="Show statistics"
+      >
+        📊
+      </button>
+      
+      {/* Stats modal */}
+      <StatsDisplay 
+        stats={stats} 
+        isOpen={showStats} 
+        onClose={() => setShowStats(false)}
+      />
       
       {currentSaying ? (
         <div className="flashcard-container">
@@ -292,6 +397,12 @@ function App() {
             </div>
           )}
           
+          <div className="keyboard-instructions">
+            <span><span className="key">Space</span> or <span className="key">Enter</span>: Flip card</span>
+            <span><span className="key">→</span>: Next card</span>
+            <span><span className="key">F</span>: Toggle favorite</span>
+            <span><span className="key">S</span>: Show stats</span>
+          </div>
         </div>
       ) : (
         <div className="loading-container">
